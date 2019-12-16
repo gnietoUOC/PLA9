@@ -1,4 +1,4 @@
-#include "Homie.h"
+#include "Cache.h"
 
 Cache::Cache(int size) {
   this->size = size;
@@ -14,16 +14,27 @@ Cache::~Cache() {
 
 //Record::Record(long time, short type, float value) {
 //Record::Record(long time, char *tag, float value) {
-Record::Record(long time, char *tag, char *value) {
+//Record::Record(long time, char *tag, char *value) {
+Record::Record(unsigned long time, Base *base, char *tag, char *value) {
+  Serial.println("-> Record::Record");
+
   this->time = time;
+  Serial.println(time);
+  this->base = base;
 //  this->type = type;
   strcpy(this->tag,tag);
 //  this->value = value;
   strcpy(this->value,value);
+
+  Serial.println("<- Record::Record");
 }
 
 long Record::getTime() {
   return time;
+}
+
+Base *Record::getBase() {
+  return this->base;
 }
 
 //short Record::geType() {
@@ -82,6 +93,8 @@ Record *Cache::pull() {
   DPRINTLN("-> pull");
   Record *record= items[r];
   inc(&r);
+  Serial.print("Pull: ");
+  Serial.println(r);
   DPRINTLN("<- pull");
   return record;
 }

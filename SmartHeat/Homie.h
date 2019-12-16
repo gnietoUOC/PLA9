@@ -3,13 +3,15 @@
 
 #define MAX_DEVICES     1
 #define MAX_CHILDREN    3
-#define MAX_PROPERTIES  6
+#define MAX_PROPERTIES  8
 #define MAX_ATTRIBUTES  4
 #define ENV_PROPS       3
 #define NA              -1000
 
 #define SECURED
-#define EC2
+//#define UBUNTU
+#define RASPBERRY
+//#define EC2
 //#define ZT
 
 #ifdef EC2
@@ -26,8 +28,17 @@
   #endif
   #define MQUSERNAME      "soc-iot"
   #define MQPWD           "unic0s19"
-#else 
+#elif defined UBUNTU
   #define MQHOST          "192.168.0.159"
+  #define MQUSERNAME      "genaro"
+  #define MQPWD           "passw0rd"
+  #ifdef SECURED
+    #define MQPORT          8883           
+  #else 
+    #define MQPORT          1883           
+  #endif
+#elif defined RASPBERRY
+  #define MQHOST          "10.0.0.1"
   #define MQUSERNAME      "genaro"
   #define MQPWD           "passw0rd"
   #ifdef SECURED
@@ -37,8 +48,8 @@
   #endif
 #endif
 
-#define RASPBERRY
-#ifdef RASPBERRY
+#define RASPBERRY_AP
+#ifdef RASPBERRY_AP
   #define PISSID          "Genaro0712"
   #define PIPWD           "passw0rd"
 #else
@@ -49,6 +60,7 @@
 #define MQRETAIN        true
 #define WILLTOPIC       "MKR1000"
 #define WILLMESSAGE     "ATPC"
+#define CLEANSESSION    false
 #define MQCLIENT          "mkr1000"
 
 #define MQPERIOD          1000 // 1sg
@@ -71,6 +83,9 @@
 #include <SD.h>
 #include <RTCZero.h>
 #include "Cache.h"
+
+class Cache;
+class Record;
 
 class Homie;
 class Device;
@@ -96,11 +111,8 @@ class Attribute {
 
 class Base {
   public:
-//    Base (PubSubClient *client, char* name);
-//    Base (PubSubClient *client);
     Base (PubSubClient *client, Base *parent, char* name);
     Base (PubSubClient *client, Base *parent, char* name, int index);
-//    Base (PubSubClient *client, Base *parent, char* name, char *units, bool settable);
 
     char* getName();
     void setName(char *name);
@@ -118,6 +130,7 @@ class Base {
     void getPath(char *path);
     void process(char *topic,char *payload);
     void pub(char *tag, char *value);
+    void pub(Record *record);
 
     static RTCZero *getRTC();
     static Cache *getCache();
@@ -185,20 +198,12 @@ class Homie : public Device {
     void update();
     void dump();
     void reconnect();
-//    static Homie *getInstance(PubSubClient *client);
-//    static Homie *getInstance();
     Homie(PubSubClient *client);
     void callback(char* topic, uint8_t* payload, unsigned int length);
+    Property *find(char *device, char *node, char *property);
 
   private:
-//    static void callback(char* topic, byte* payload, unsigned int length);
-//    void callback(char* topic, uint8_t* payload, unsigned int length);
-//    Homie(PubSubClient *client);
-//    Homie(PubSubClient *client);
-//    static Homie *homie;
 };
-
-//Homie *Homie::homie = 0;
 
 class Property : public Base {
 
@@ -207,11 +212,14 @@ class Property : public Base {
     Property(PubSubClient *client, Node *parent, char *name, int index, char *units, char *type, bool settable);
     float getValue();
     void setValue(float value);
+    char *getCValue();
+    void setCValue(char *cvalue);
     int getIValue();
     void setIValue(int ivalue);
     bool getBValue();
     void setBValue(bool bvalue);
     virtual void set(char *value);
+    void setPublish(boolean publish);
     
     void dump();
     void update();
@@ -219,8 +227,11 @@ class Property : public Base {
 
   private:
     float value;
+    char *cvalue;
     int ivalue;
     int bvalue;
+    boolean publish;
+    
 
 };
 
@@ -285,7 +296,7 @@ class Pin : public Property {
     Pin(PubSubClient *client, Node *parent,char *name,int pin);
     void update();
     void set(bool status);
-    void set(char *value);
+    void set(char *cvalue);
 
    private:
     int pin;

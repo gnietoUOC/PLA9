@@ -69,11 +69,8 @@ void Base::pub(char *tag,char *value) {
 
   DPRINTLN("-> Base.pub");
   if (getClient()->connected()) {
-//    Serial.println("Connected");
     getPath(path);
-
-      if (tag!=NULL) {
-//        Serial.println("Tag");
+    if (tag!=NULL) {
       sprintf(data,"%s/%s",path,tag);
       if (value!=NULL) {
         client->publish(data,value,MQRETAIN);
@@ -81,20 +78,44 @@ void Base::pub(char *tag,char *value) {
         client->publish(data,NULL,0,MQRETAIN);
       }
       DPRINTLN(data); 
-      Serial.println(data);
+//      Serial.println(data);
     } else {
-//      Serial.println("No Tag");
-      client->publish(path,value,false);
+      client->publish(path,value,MQRETAIN);
       // Después de publicar el mensaje guardamos una entrada 
       // en un fichero en la tarjeta
-      logger(value);
+      //logger(value);
     } 
   } else {
     DPRINTLN("Recording...");
-    Record *r = new Record(WiFi.getTime(),tag,value);
+    Record *r = new Record(WiFi.getTime(),this,tag,value);
     getCache()->push(r);
   }
   DPRINTLN("<- Base.pub");
+}
+
+void Base::pub(Record *r) {
+  char value[32];
+  char path[96];
+
+  DPRINTLN("-> Base.pub2");
+  
+  if (getClient()->connected()) {
+    getPath(path);
+// Supongo que las propiedades no se han perdido    
+    sprintf(value,"%s@%ld",r->getValue(),r->getTime());
+    Serial.println(value);
+    client->publish(path,value,MQRETAIN);
+    // Supongo que ha ido bien ... elimino el mensaje de la cache
+    // y libero la memoria
+    getCache()->pull();
+    free(r);
+    
+    // Después de publicar el mensaje guardamos una entrada 
+    // en un fichero en la tarjeta
+    logger(value);
+  }
+
+  DPRINTLN("<- Base.pub2");
 }
 
 void Base::logger(char *value) {
@@ -130,7 +151,7 @@ RTCZero *Base::getRTC() {
   DPRINTLN("-> Base.getRTC");
   
   if (rtc==NULL) {
-    Serial.println("    Base.getRTC.INIT");
+    DPRINTLN("    Base.getRTC.INIT");
     rtc = new RTCZero();
     rtc->begin();
 //    do {
@@ -281,23 +302,70 @@ void Homie::dump() {
 void Homie::reconnect() {
   char data[32];
   
-  DPRINTLN("-> Homie.reconnect");
+//  DPRINTLN("-> Homie.reconnect");
 
+  if( WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi");
+    WiFi.begin(PISSID,PIPWD);
+    delay(5000);
+  }
   // Reintentamos hasta conseguir conexión
-  while (!getClient()->connected()) {
+
+//  LED *dl = (LED *)find((char *)"MKR1000",(char *)"MKRCORE",(char *)"Status");  
+//  Serial.print("Dual: ");
+//  Serial.println(dl==NULL);
+  if(!getClient()->connected()) {
+//    if (dl!=NULL) {
+//      dl->set((char *)"YELLOW");  
+//    }
     Serial.print("Connecting MQTT...");
     // He modificado la conexión para definir un mensaje 'Last Will'
-    if (getClient()->connect(MQCLIENT,MQUSERNAME,MQPWD,WILLTOPIC,1,false,WILLMESSAGE,true)) {
+    if (getClient()->connect(MQCLIENT,MQUSERNAME,MQPWD,WILLTOPIC,1,false,WILLMESSAGE,CLEANSESSION)) {
       Serial.println("Connected");
+
+      // Verificamos si la caché tiene registros pendientes de enviar
+      Cache *cache = getCache();
+      while (cache->length()>0) {
+        Record *r = cache->peek();
+        r->getBase()->pub(r);
+      }
     } else {
       Serial.print("Failed, rc=");
       Serial.println(getClient()->state());
       // Wait 5 seconds before retrying
-      delay(5000);
+      //delay(5000);
     }
+  } else {
+//    if (dl!=NULL) {
+//      dl->set((char *)"GREEN");  
+//    }
   }
 
-  DPRINTLN("<- Homie.reconnect");
+//  DPRINTLN("<- Homie.reconnect");
+}
+
+Property *Homie::find(char *device, char *node, char *property) {
+  Property *p = NULL;
+
+  Serial.println("-> Homie.find");
+  
+  Device *d = (Device *)getChild(device);
+  if (d!=NULL) {
+    Node *n = d->getChild(node);
+    if (n!=NULL) {
+      p = n->getProperty(property);
+      if (p==NULL) {
+        Serial.println("Property not found");
+      }
+    } else {
+      Serial.println("Node not found");
+    }
+  } else {
+    Serial.println("Device not found");
+  }
+  Serial.println("<- Homie.find");
+
+  return p;
 }
 
 Device::Device(PubSubClient *client, Device *parent, char *name) : Node(client, parent, name) {
@@ -360,6 +428,7 @@ Node *Device::getChild(char *name) {
   DPRINTLN("-> Device.getChild");
   for (int i=0; i<getNumChildren() && node==NULL; i++) {
     char *namei = getChild(i)->getName();
+//    Serial.println(namei);
     if (!strcmp(namei,name)) {
         node = getChild(i);
     }
@@ -377,6 +446,10 @@ void Device::process(char *topic, char* value) {
   Node *node;
   
   DPRINTLN("-> Device.process");
+  DPRINT("Topic:");
+  DPRINTLN(topic);
+  DPRINT("Value:");
+  DPRINTLN(value);
 
   if (!strncmp(topic,"Homie/",6)) {
     topic += 6;
@@ -433,8 +506,8 @@ void Device::dump() {
 void Device::clear() {
   
   DPRINTLN("-> Device.clear");
-  Serial.print("Nodes: ");
-  Serial.println(getNumChildren());
+  DPRINT("Nodes: ");
+  DPRINTLN(getNumChildren());
   Node** nn = getChildren();
   for (int i=0;i<getNumChildren();i++) {
     Node* n = nn[i];
@@ -604,6 +677,7 @@ Property::Property(PubSubClient *client, Node *parent, char *name, int index, ch
   value = NA;
   ivalue = NA;
   bvalue = false;
+  publish=true;
   if (units!=NULL) {
     addAttribute(new Attribute((char *)"units",units));
   }
@@ -616,6 +690,9 @@ Property::Property(PubSubClient *client, Node *parent, char *name, int index, ch
 
 void Property::set(char *value) {
   Serial.println("Not implemented");
+//  DPRINTLN("-> Property.set");
+//  setCValue(value);
+//  DPRINTLN("<- Property.set");
 }
 
 float Property::getValue() {
@@ -632,7 +709,7 @@ void Property::setValue(float value) {
 
 //  if (abs(this->value-value)>=1) {
     sprintf(data,"%.2f <-> %.2f (%.4f)",this->value,value,this->value-value);            
-    Serial.println(data);    
+    DPRINTLN(data);    
     sprintf(data,"%.2f",value);            
     pub(NULL,data);
     this->value = value;
@@ -649,21 +726,42 @@ void Property::setIValue(int ivalue) {
   char data[64];
 
   DPRINTLN("-> Property.setIValue");
-  if (abs(this->ivalue-ivalue)>=1) {
-    sprintf(data,"%d <-> %d",this->ivalue,ivalue);           
-    Serial.println(data);    
-    sprintf(data,"%d",ivalue);            
-    pub(NULL,data);
+//  if (abs(this->ivalue-ivalue)>=1) {
+    sprintf(data,"%d <-> %d",this->ivalue,ivalue);  
+    DPRINTLN(data);    
+    if (publish) {         
+      sprintf(data,"%d",ivalue);            
+      pub(NULL,data);
+    }
     this->ivalue = ivalue;
+//  } else {
+//    DPRINTLN("@");
+//  }
+  DPRINTLN("-> Property.setIValue");
+}
+
+char *Property::getCValue() {
+  return cvalue;
+}
+
+void Property::setCValue(char *cvalue) {
+  char data[64];
+
+  DPRINTLN("-> Property.setCValue");
+  if (strcmp(cvalue,this->cvalue)) {
+    sprintf(data,"%s <-> %s",this->cvalue,cvalue);           
+    DPRINTLN(data);    
+    pub(NULL,cvalue);
+    this->cvalue = cvalue;
   } else {
     DPRINTLN("@");
   }
-  DPRINTLN("-> Property.setIValue");
+  DPRINTLN("<- Property.setCValue");
 }
 
 bool Property::getBValue() {
   return bvalue;
-}
+} 
 
 void Property::setBValue(bool bvalue) {
   char data[64];
@@ -671,9 +769,11 @@ void Property::setBValue(bool bvalue) {
   DPRINTLN("-> Property.setBValue");
   if (this->bvalue!=bvalue) {
     sprintf(data,"%d <-> %d",this->bvalue,bvalue);           
-    Serial.println(data);    
-    sprintf(data,"%d",bvalue);            
-    pub(NULL,data);
+    DPRINTLN(data);    
+    if (publish) {
+      sprintf(data,"%d",bvalue);            
+      pub(NULL,data);
+    }
     this->bvalue = bvalue;
   }
   DPRINTLN("<- Property.setBValue");
@@ -714,6 +814,10 @@ void Property::clear() {
     }
   }
   DPRINTLN("-> Property.clear");
+}
+
+void Property::setPublish(boolean publish) {
+  this->publish = publish;
 }
 
 Temperature::Temperature(PubSubClient *client, Node *parent) : Property(client, parent,(char *)"Temperature",(char *)"ºC",(char *)"Float",false) {
@@ -874,12 +978,12 @@ void Pin::set(bool status) {
   digitalWrite(pin,status);
 }
 
-void Pin::set(char *value) {
+void Pin::set(char *cvalue) {
   DPRINTLN("-> Pin.set");
-  if (!strcmp(value,"ON")) {
+  if (!strcmp(cvalue,"ON") || !strcmp(cvalue,"1")) {
     set(true);
   } else {
-    if (!strcmp(value,"OFF")) {
+    if (!strcmp(cvalue,"OFF") || !strcmp(cvalue,"0")) {
       set(false);
     }
   }

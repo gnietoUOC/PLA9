@@ -1,18 +1,14 @@
-//#include <WiFi101.h>
-//#include <PubSubClient.h>
-
 #include "Homie.h"
 #include "Cache.h"
-
-// Update these with values suitable for your network.
+#include "DLED.h"
+#include "Thermostat.h"
 
 int status = WL_IDLE_STATUS;     
 
 unsigned long next1;
 unsigned long next2;
-#define PERIOD1 1200;
-#define PERIOD2  800;
-
+#define PERIOD1 5000
+#define PERIOD2 1000
 
 #ifdef SECURED
 WiFiSSLClient wifiClient;
@@ -20,81 +16,70 @@ WiFiSSLClient wifiClient;
 WiFiClient wifiClient;
 #endif
 PubSubClient *client;
-
-// Objeto que gestionar el temporizador. Utilizamos el temporizador 4
-// porque tiene una resolución de 32 bits. Sin esa resolución y con esa 
-// velocidad de reloj no podríamos medir más de 1sg. 
-//Adafruit_ZeroTimer timer = Adafruit_ZeroTimer(4);
-
 Homie *homie;
-//Cache *cache;
-//int n = 10;
+LED *yl;
+LED *rl;
+DLED *dl;
+Thermostat *th;
+Temperature *t;
+Relay *r1;
+#define OFFSET 0.5
+
 
 void setup() {
   Serial.begin(9600);
-  while (!Serial);
+//  while (!Serial);
 
   Serial.println("*** MKR1000 ***");
 
   // Inicializamos la tarjeta 
   SD.begin(4);
-  
   connectWiFi();
   dumpWiFi();
+//  syncClock();
 
   client = new PubSubClient(wifiClient);
   client->setServer(MQHOST, MQPORT);
 
   defineDevice();
+  dl->set((char *)"RED");
   homie->dump();
+
+  Serial.print("MQTT: ");
+  Serial.println(MQHOST);
 
   client->setCallback(callback);
   client->subscribe("Homie/+/+/+/Set");
-
-//  cache = new Cache(20);
-//  for(int i=0;i<10;i++) {
-//    Record *r = new Record(WiFi.getTime(),0,i);
-//    cache->push(r);
-//  }
-
-
   
+  dl->set((char *)"GREEN");
   next1 = millis();
   next2 = millis();
 }
 
 void loop() {
   if (millis()>next1) {
-    next1 += PERIOD1;
-//    Serial.print("Pushing ");
-//    Serial.println(n);
-//    Record *r = new Record(WiFi.getTime(),,n);
-//    cache->push(r);
-//    n++;
+    next1 = millis()+PERIOD1;
     homie->update();
   }
 
-//  if (millis()>next2) {
-//    next2 += PERIOD2;
-//
-//    if (cache->length()>0) {
-////      float value = cache->pull();
-//      Record *record = cache->pull();
-//      Serial.print("Pulling ");
-//      Serial.print(record->getValue());
-//      Serial.print(" [");
-//      Serial.print(record->getTime());
-//      Serial.println(" [");
-//      free(record);
-//    } else {
-//      Serial.println("***");
-//    }
-//    
-//  }
+  if (millis()>next2) {
+    next2 = millis()+PERIOD2;
 
-//  homie->reconnect();
+   // Desactivo el calentador si se ha superado la temperatura
+   if (t->getValue() > th->getIValue()+OFFSET) {
+      r1->set(false);
+      rl->set(false);
+    }
+    
+    if (t->getValue() < th->getIValue()) {
+      r1->set(true);
+      rl->set(true);
+    }
+  }
+    
+  homie->reconnect();
 
-//  client->loop();
+  client->loop();
  
 }
 
@@ -141,12 +126,27 @@ void connectWiFi() {
   Serial.println("\nConnected.");
 }
 
+void syncClock() {
+  unsigned long epoch;
+  do {
+        Serial.print("Sync time ...");
+        epoch = WiFi.getTime();
+        delay(1500);
+        Serial.println("done?");
+//        numberOfTries++;
+//  } while ((epoch == 0) || (numberOfTries < 6));
+  } while (epoch == 0);
+  Serial.println(epoch);
+}
+
 // Función que es invocada cuando el broker MQTT nos envía un mensaje
 // al que previamente nos habíamos suscrito.
 // TODO: Registrar directamente un método de la instancia de Homie.
 void callback(char* topic, uint8_t* payload, unsigned int length) {
   DPRINTLN("-> Callback");
+  yl->set((char *)"ON");
   homie->callback(topic, payload, length);
+  yl->set((char *)"OFF");
   DPRINTLN("<- Callback");
  }
 
@@ -161,13 +161,19 @@ void defineDevice() {
   Device *device = new Device(client,homie,(char *)"MKR1000");
 
   Node *node = new Node(client, device,(char *)"MKRCORE");
-
   Memory *m = new Memory(client,node);
-  LED *l = new LED(client,node,6);
+  th = new Thermostat(client,node);
+  dl = new DLED(client,node,(char *)"Status",4,3);
+  dl->setPublish(false);
+  yl = new LED(client,node,5);
+  yl->setPublish(false);
+  rl = new LED(client,node,0);
+  rl->setPublish(false);
+  rl->set(true);
 
   node = new Node(client, device,(char *)"MKRRELAY");
-  Relay *r = new Relay(client,node,1);
-  r = new Relay(client,node,2);
+  r1 = new Relay(client,node,1);
+  Relay *r2 = new Relay(client,node,2);
 
   // Si no está conectado el MKRENV, no añado el módulo de sensores
   // a la definición del dispositivo.
@@ -175,7 +181,7 @@ void defineDevice() {
     Serial.println("Failed to initialize MKR ENV shield!");
   } else {
     node = new Node(client, device,(char *)"MKRENV");
-    Temperature *t = new Temperature(client, node);
+    t = new Temperature(client, node);
     Humidity *h = new Humidity(client, node);
     Pressure *p = new Pressure(client, node);
     Illuminance *i = new Illuminance(client, node);

@@ -3,25 +3,29 @@
 
 #include "Homie.h"
 
+class Base;
+
 class Record {
 
   public:
 //    Record(long time, short type, float value);
 //    Record(long time, char *type, float value);
-    Record(long time, char *type, char* value);
+    Record(unsigned long time, Base *base, char *type, char* value);
 
    long getTime();
+   Base *getBase();
 //   short geType();
    char *getTag();
 //   float getValue();
    char *getValue();
 
   private:
-    long time;
+    unsigned long time;
 //    float value;
     char value[8];
 //    short type;
     char tag[16];
+    Base *base;
 
   
 };
