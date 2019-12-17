@@ -16,4 +16,8 @@ Por último una imagen del aspecto del panel de control en Grafana que integra u
 
 ![Dashboard](./images/Dashboard2.png)
 
+En esta imagen se muestra qué información aparece en el panel y como actuar sobre el para activar manualmente los relés.
+
+![Instrucciones](./images/Instrucciones.PNG)
+
 
