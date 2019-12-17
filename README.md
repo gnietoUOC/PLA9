@@ -1,20 +1,12 @@
 # PLA9
 
-Aquí están los dos flujos Node-RED de la PLA9. 
+Aquí está el código fuente para la PLA9. En concreto, la parte que corre dentro de la MKR1000. El resto, los flujos de Node-RED esán en https://github.com/gnietoUOC/PLA9-Node
 
-## Flujo MQTT -> InfluxDB
+El código recoge las mediciones de temperatura y, en función del valor seleccionado por un termostato, mediante un relé se activa una resistencia que simula un calentador de agua. También controla un segundo relé para simular la puesta en marcha de una bomba de agua.
 
-El primero de ellos es el que se subscribe al broker Mosquitto y guarda la información recibida a través de los mensajes MQTT como registros en InflusDB.
-Tanto los nodos de Mosquitto como InfluxDB han sido configurados para usar SSL/TLS y credenciales.
+![Conectividad Panel](./images/Panel.png)
 
-![Flujo MQTT->InfluxDB](./images/Flujo1.png)
 
-## Flujo Dashboard
+![Conectividad Panel](./images/Panel2.png)
 
-El segundo de ellos es el flujo para crear un mini dashboard. En realidad este dashboard únicamente muestra una imágen SVG usando el componente Template. Se han añadido unas líneas de Javascript para poder actuar cuando se pulse sobre la imagen.
 
-![Flujo Dashboard](./images/Flujo2.png)
-
-El aspecto de ese mini dashboard se muestra a continuación.
-
-![Dashboard](./images/Caldera.png)
